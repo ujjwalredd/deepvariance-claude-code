@@ -46,7 +46,7 @@ Safe mode prevents user-level Claude Code hooks, plugins, MCP servers, custom ag
 
 **First run** prompts for:
 
-- **Model API base URL** — defaults to the bundled endpoint (editable)
+- **Model API base URL** — your OpenAI-compatible endpoint, e.g. `https://your-host/v1` (required; must be reachable)
 - **Email** — sent as an `X-User-Email` header for usage logging (see below)
 - **API key** — entered hidden
 

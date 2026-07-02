@@ -44,7 +44,9 @@ run_launcher() { # run_launcher PORT [extra args...]
   "port": $port
 }
 EOF
-  /bin/bash "$ROOT/bin/deepvariance" launch claude "$@" 2>&1
+  # Skip the upstream reachability preflight: these cases exercise arg handling
+  # against a stub claude, not real connectivity.
+  DEEPVARIANCE_SKIP_UPSTREAM_CHECK=1 /bin/bash "$ROOT/bin/deepvariance" launch claude "$@" 2>&1
 }
 
 # 1. No extra args (the bash 3.2 empty-array crash case).
@@ -103,12 +105,31 @@ NPMHOME="$TMP/npmhome"; mkdir -p "$NPMHOME"
 cat > "$NPMHOME/config.json" <<'EOF'
 { "apiBase":"http://127.0.0.1:1/v1","email":"t@e.com","apiKey":"k","model":"m","modelCtx":32768,"toolMode":"emulated","maxOutputTokens":8192,"port":18930 }
 EOF
-out="$(DEEPVARIANCE_HOME="$NPMHOME" /bin/bash "$NPMPKG/bin/deepvariance" launch claude 2>&1)" && rc=0 || rc=$?
+out="$(DEEPVARIANCE_HOME="$NPMHOME" DEEPVARIANCE_SKIP_UPSTREAM_CHECK=1 /bin/bash "$NPMPKG/bin/deepvariance" launch claude 2>&1)" && rc=0 || rc=$?
 check "npm-layout launch exits 0 (resolves lib via script dir)" "$rc"
 echo "$out" | grep -q 'proxy not found' && r=1 || r=0
 check "npm-layout does not report missing proxy" "$r"
 echo "$out" | grep -q 'CLAUDE_ARGS:--safe-mode$' && r=0 || r=1
 check "npm-layout still launches claude with safe-mode" "$r"
+
+# 8. Upstream preflight: unreachable backend fails fast (not skipped) with
+#    guidance, and never launches claude.
+cat > "$DEEPVARIANCE_HOME/config.json" <<'EOF'
+{ "apiBase":"http://127.0.0.1:1/v1","email":"t@e.com","apiKey":"k","model":"m","modelCtx":32768,"toolMode":"emulated","maxOutputTokens":8192,"port":18931 }
+EOF
+out="$(/bin/bash "$ROOT/bin/deepvariance" launch claude 2>&1)" && rc=0 || rc=$?
+[ "$rc" != "0" ] && r=0 || r=1
+check "unreachable backend blocks launch (non-zero exit)" "$r"
+echo "$out" | grep -q 'unreachable' && r=0 || r=1
+check "preflight prints an 'unreachable' message" "$r"
+echo "$out" | grep -q 'CLAUDE_ARGS:' && r=1 || r=0
+check "claude is never launched on unreachable backend" "$r"
+
+# 9. Override lets it proceed past the preflight.
+out="$(DEEPVARIANCE_SKIP_UPSTREAM_CHECK=1 /bin/bash "$ROOT/bin/deepvariance" launch claude 2>&1)" && rc=0 || rc=$?
+check "DEEPVARIANCE_SKIP_UPSTREAM_CHECK bypasses preflight (exit 0)" "$rc"
+echo "$out" | grep -q 'CLAUDE_ARGS:--safe-mode$' && r=0 || r=1
+check "override still launches claude" "$r"
 
 note ""
 note "launcher tests: $PASS passed, $FAIL failed"

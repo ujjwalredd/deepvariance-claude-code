@@ -1,6 +1,6 @@
 {
   "name": "deepvariance-claude-code",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Run Claude Code against a self-hosted OpenAI-compatible model via a local translation proxy with true streaming and tool-calling",
   "license": "MIT",
   "bin": {

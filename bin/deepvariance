@@ -6,7 +6,7 @@
 #   deepvariance help | version
 set -euo pipefail
 
-VERSION="1.2.0"
+VERSION="1.2.1"
 HOME_DIR="${DEEPVARIANCE_HOME:-$HOME/.deepvariance}"
 DEFAULTS="$HOME_DIR/config.default.json"
 CONF="$HOME_DIR/config.json"
@@ -50,8 +50,20 @@ setup_config() {
   echo "Configuring Claude Code -> self-hosted model."
   echo
 
-  read -r -p "Model API base URL [$cur_base]: " api_base
-  api_base="${api_base:-$cur_base}"
+  # Model API base URL is required and must be an http(s) URL. There is no
+  # working default (the old bundled tunnel URL rotates and dies), so the user
+  # must supply a live endpoint.
+  local base_prompt="Model API base URL"
+  [ -n "$cur_base" ] && base_prompt="$base_prompt [$cur_base]"
+  while :; do
+    read -r -p "$base_prompt: " api_base
+    api_base="${api_base:-$cur_base}"
+    case "$api_base" in
+      http://*|https://*) break ;;
+      "") echo "  A model API base URL is required (e.g. https://your-host/v1)." ;;
+      *)  echo "  Must start with http:// or https:// (got '$api_base')." ;;
+    esac
+  done
 
   read -r -p "Your email (sent as X-User-Email for usage logging)${cur_email:+ [$cur_email]}: " email
   email="${email:-$cur_email}"
@@ -64,16 +76,22 @@ setup_config() {
   [ -z "$key" ] && key="$cur_key"
   [ -n "$key" ] || die "API key is required"
 
-  # Validate the key against the endpoint before saving.
-  echo -n "Validating key... "
+  # Validate the endpoint + key before saving so a dead/typo'd URL is caught
+  # now, not mid-session as a 502.
+  echo -n "Checking endpoint... "
   local code
-  code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 25 "$api_base/models" -H "Authorization: Bearer $key" -H "X-User-Email: $email" || echo "000")"
+  code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 25 "$api_base/models" -H "Authorization: Bearer $key" -H "X-User-Email: $email" 2>/dev/null || true)"; code="${code:-000}"
   if [ "$code" = "200" ]; then
-    echo "ok"
+    echo "ok (reachable, key accepted)"
   elif [ "$code" = "401" ] || [ "$code" = "403" ]; then
     die "endpoint rejected the key (HTTP $code). Re-run: deepvariance config"
+  elif [ "$code" = "000" ]; then
+    echo "UNREACHABLE"
+    echo "  Could not reach $api_base (DNS/connection failed)."
+    echo "  Saving anyway, but 'deepvariance launch claude' will not work until"
+    echo "  the backend is up. Verify later with: deepvariance doctor"
   else
-    echo "warning: could not verify (HTTP $code) — saving anyway"
+    echo "warning: unexpected response (HTTP $code) — saving anyway"
   fi
 
   mkdir -p "$HOME_DIR"
@@ -94,8 +112,8 @@ setup_config() {
 
 launch_claude() {
   [ -f "$CONF" ] || setup_config
-  # Ensure required fields exist (older/partial config -> re-run setup).
-  if [ -z "$(jv apiKey "$CONF")" ] || [ -z "$(jv email "$CONF")" ]; then
+  # Ensure required fields exist (older/partial config or empty default -> setup).
+  if [ -z "$(jv apiBase "$CONF")" ] || [ -z "$(jv apiKey "$CONF")" ] || [ -z "$(jv email "$CONF")" ]; then
     setup_config
   fi
 
@@ -117,6 +135,23 @@ launch_claude() {
   case "$ctx" in ''|*[!0-9]*) die "modelCtx must be an integer (got '$ctx')";; esac
   case "$port" in ''|*[!0-9]*) die "port must be an integer (got '$port')";; esac
   case "$max_out" in ''|*[!0-9]*) die "maxOutputTokens must be an integer (got '$max_out')";; esac
+
+  # Preflight: confirm the model backend is actually reachable before starting a
+  # session, so a dead/stale endpoint fails here with guidance instead of
+  # 502-ing every request mid-session. Override with DEEPVARIANCE_SKIP_UPSTREAM_CHECK=1.
+  if [ "${DEEPVARIANCE_SKIP_UPSTREAM_CHECK:-0}" != "1" ]; then
+    local up_code
+    up_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$api_base/models" -H "Authorization: Bearer $key" ${email:+-H "X-User-Email: $email"} 2>/dev/null || true)"; up_code="${up_code:-000}"
+    case "$up_code" in
+      200) : ;;
+      401|403) die "backend rejected the API key (HTTP $up_code). Re-enter it: deepvariance config" ;;
+      000) die "model backend unreachable at $api_base (DNS/connection failed).
+  Start your model server (and refresh the URL if it is a *.trycloudflare.com tunnel),
+  then: deepvariance config   — or check with: deepvariance doctor
+  To start anyway: DEEPVARIANCE_SKIP_UPSTREAM_CHECK=1 deepvariance launch claude" ;;
+      *) echo "deepvariance: warning: backend returned HTTP $up_code from $api_base/models — continuing" >&2 ;;
+    esac
+  fi
 
   if curl -sS "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
     die "port $port already has a deepvariance proxy. Stop it with: deepvariance stop"
