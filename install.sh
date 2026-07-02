@@ -4,9 +4,8 @@
 set -euo pipefail
 
 REPO="ujjwalredd/deepvariance-claude-code"
-VERSION="1.0.3"
+VERSION="1.0.4"
 REF="${DEEPVARIANCE_REF:-main}"
-RAW="https://raw.githubusercontent.com/$REPO/$REF"
 HOME_DIR="$HOME/.deepvariance"
 
 say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
@@ -30,6 +29,16 @@ NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
 [ "$NODE_MAJOR" -ge 18 ] || die "Node >= 18 required (found $(node -v))."
 have npm || die "npm is required (ships with Node)."
 have curl || die "curl is required."
+
+# Resolve branch/tag refs to an immutable commit SHA before fetching payload
+# files. This avoids raw.githubusercontent.com serving a stale `main` payload
+# after a push. If resolution fails, fall back to the user-provided ref.
+RESOLVED_REF="$(curl -fsSL "https://api.github.com/repos/$REPO/commits/$REF" 2>/dev/null | node -e '
+  let s=""; process.stdin.on("data", c => s += c);
+  process.stdin.on("end", () => { try { const j=JSON.parse(s); process.stdout.write(j.sha || ""); } catch (_) {} });
+' || true)"
+FETCH_REF="${RESOLVED_REF:-$REF}"
+RAW="https://raw.githubusercontent.com/$REPO/$FETCH_REF"
 
 # 2. Claude Code
 if have claude; then
@@ -79,7 +88,9 @@ fi
 say "Installed."
 echo
 echo "  Installed from: $REF"
+[ "$FETCH_REF" != "$REF" ] && echo "  Resolved commit: $FETCH_REF"
 echo "  Binary: $BIN_DIR/deepvariance"
+"$BIN_DIR/deepvariance" version 2>/dev/null | sed 's/^/  Version: /' || true
 if [ -n "$EXISTING_BIN" ] && [ "$EXISTING_BIN" != "$BIN_DIR/deepvariance" ] && on_path "$(dirname "$EXISTING_BIN")"; then
   echo
   echo "  Warning: existing deepvariance at $EXISTING_BIN may still be earlier on PATH."
