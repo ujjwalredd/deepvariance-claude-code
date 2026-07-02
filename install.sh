@@ -4,7 +4,7 @@
 set -euo pipefail
 
 REPO="ujjwalredd/deepvariance-claude-code"
-VERSION="1.0.2"
+VERSION="1.0.3"
 REF="${DEEPVARIANCE_REF:-main}"
 RAW="https://raw.githubusercontent.com/$REPO/$REF"
 HOME_DIR="$HOME/.deepvariance"
