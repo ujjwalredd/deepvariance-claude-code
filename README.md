@@ -6,7 +6,7 @@ Run [Claude Code](https://github.com/anthropics/claude-code) against a **self-ho
 deepvariance launch claude
 ```
 
-Claude Code speaks the **Anthropic Messages API**; your model speaks the **OpenAI Chat Completions API**. deepvariance runs a tiny local proxy that translates between them **and emulates tool-calling** (so file read/edit/bash work) even when the backend was started without vLLM's `--tool-call-parser`.
+Claude Code speaks the **Anthropic Messages API**; your model speaks the **OpenAI Chat Completions API**. deepvariance runs a tiny local proxy that translates between them and supports tool-calling (so file read/edit/bash work). It tries native OpenAI tool calls first when available, then falls back to Ollama-style prompt parsing when the backend was started without vLLM's `--tool-call-parser`.
 
 ---
 
@@ -51,14 +51,20 @@ These are saved to `~/.deepvariance/config.json` (`chmod 600`). Nothing is commi
 
 ```
 Claude Code ──Anthropic /v1/messages──▶ deepvariance proxy ──OpenAI /chat/completions──▶ your model (vLLM)
-   ▲                                         │  • render Anthropic tools -> Hermes prompt
-   │                                         │  • call backend WITHOUT `tools` (dodge missing-parser 400)                       │
-   └────────── Anthropic response ◀──────────┘  • parse <tool_call> back into tool_use
+   ▲                                         │  • native OpenAI tools when supported
+   │                                         │  • otherwise render Anthropic tools -> Hermes prompt
+   └────────── Anthropic response ◀──────────┘  • parse native tool_calls or <tool_call> back into tool_use
                                                 • cap output to the model context window
                                                 • add X-User-Email header
 ```
 
-Defaults live in [`config.default.json`](config.default.json): model, `apiBase`, `modelCtx` (context window), `port`.
+Defaults live in [`config.default.json`](config.default.json): model, `apiBase`, `modelCtx` (context window), `toolMode`, `port`.
+
+`toolMode` values:
+
+- `auto` — try native upstream tool calls first, fall back to emulated prompt parsing on parser/tool errors.
+- `native` — require upstream OpenAI tool calls. Best when vLLM is launched with `--enable-auto-tool-choice --tool-call-parser hermes`.
+- `emulated` — always use prompt-based Ollama/Hermes-style tool parsing.
 
 ## Usage logging
 
@@ -66,7 +72,7 @@ Every upstream request carries `X-User-Email: <your email>`. Your model server r
 
 ## Limitations
 
-- **Tool-calling is emulated**, not native. Reliable for common flows, but complex multi-tool turns can occasionally malform. The rock-solid fix is to launch vLLM with `--enable-auto-tool-choice --tool-call-parser hermes` — then native tool calls work and this proxy is optional.
+- **Tool-calling can be native or emulated.** Native is best when the backend supports OpenAI tools. Emulated mode is useful for backends started without vLLM's `--enable-auto-tool-choice --tool-call-parser hermes`, but complex multi-tool turns can still malform because the model is producing tool JSON as text.
 - **Context window** is bounded by the model (default 32K). Big repos / long sessions hit the cap; output is trimmed to fit.
 - **`WebSearch` / `WebFetch` do not work** — those are Anthropic-hosted tools. For web access on a local model, add a search **MCP server** (e.g. Brave/Tavily).
 - **No prompt caching, vision, or extended thinking** through the proxy.
@@ -85,7 +91,7 @@ Built on **[Claude Code](https://github.com/anthropics/claude-code)** by **Anthr
 
 **deepvariance-claude-code is an unofficial community wrapper. It is not affiliated with, endorsed by, or supported by Anthropic.** All it adds is a local translation + tool-emulation proxy and a launcher.
 
-The tool-calling emulation approach is inspired by [Ollama](https://ollama.com)'s Anthropic-API compatibility and the Hermes / Qwen tool-call format.
+The launcher and tool-call compatibility approach is inspired by [Ollama](https://ollama.com)'s Anthropic-API compatibility and the Hermes / Qwen tool-call format.
 
 ## License
 

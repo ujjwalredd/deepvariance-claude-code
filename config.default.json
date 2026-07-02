@@ -2,5 +2,6 @@
   "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
   "apiBase": "https://processor-particularly-prospective-columns.trycloudflare.com/v1",
   "modelCtx": 32768,
+  "toolMode": "auto",
   "port": 8787
 }

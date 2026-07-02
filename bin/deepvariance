@@ -6,7 +6,7 @@
 #   deepvariance help | version
 set -euo pipefail
 
-VERSION="1.0.9"
+VERSION="1.0.10"
 HOME_DIR="${DEEPVARIANCE_HOME:-$HOME/.deepvariance}"
 LIB="$HOME_DIR/lib/proxy.js"
 DEFAULTS="$HOME_DIR/config.default.json"
@@ -87,11 +87,12 @@ launch_claude() {
     setup_config
   fi
 
-  local api_base key model email ctx port
+  local api_base key model email ctx port tool_mode
   api_base="$(jv apiBase "$CONF")"; [ -n "$api_base" ] || api_base="$(default_of apiBase)"
   model="$(jv model "$CONF")";     [ -n "$model" ]    || model="$(default_of model)"
   ctx="$(jv modelCtx "$CONF")";    [ -n "$ctx" ]      || ctx="$(default_of modelCtx)"; ctx="${ctx:-32768}"
   port="$(jv port "$CONF")";       [ -n "$port" ]     || port="$(default_of port)"; port="${port:-8787}"
+  tool_mode="$(jv toolMode "$CONF")"; [ -n "$tool_mode" ] || tool_mode="$(default_of toolMode)"; tool_mode="${tool_mode:-auto}"
   key="$(jv apiKey "$CONF")"
   email="$(jv email "$CONF")"
 
@@ -99,9 +100,10 @@ launch_claude() {
     die "port $port already has a deepvariance proxy. Stop the old process or change port in $CONF"
   fi
 
-  # Start the emulation proxy.
+  # Start the Anthropic/OpenAI compatibility proxy.
   UPSTREAM_BASE="$api_base" UPSTREAM_KEY="$key" UPSTREAM_MODEL="$model" \
     USER_EMAIL="$email" MODEL_CTX="$ctx" PORT="$port" \
+    TOOL_MODE="$tool_mode" \
     PROXY_DEBUG="${PROXY_DEBUG:-0}" \
     node "$LIB" &
   local proxy_pid=$!
@@ -128,8 +130,13 @@ launch_claude() {
   export ANTHROPIC_API_KEY=""
   export ANTHROPIC_MODEL="$model"
   export ANTHROPIC_SMALL_FAST_MODEL="$model"
+  export ANTHROPIC_DEFAULT_OPUS_MODEL="$model"
+  export ANTHROPIC_DEFAULT_SONNET_MODEL="$model"
+  export ANTHROPIC_DEFAULT_HAIKU_MODEL="$model"
+  export CLAUDE_CODE_SUBAGENT_MODEL="$model"
+  export CLAUDE_CODE_ATTRIBUTION_HEADER=0
 
-  echo "deepvariance: proxy on :$port -> $model  (user: $email)"
+  echo "deepvariance: proxy on :$port -> $model  (tools: $tool_mode, user: $email)"
   claude "$@"
 }
 
