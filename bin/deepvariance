@@ -6,7 +6,7 @@
 #   deepvariance help | version
 set -euo pipefail
 
-VERSION="1.0.6"
+VERSION="1.0.7"
 HOME_DIR="${DEEPVARIANCE_HOME:-$HOME/.deepvariance}"
 LIB="$HOME_DIR/lib/proxy.js"
 DEFAULTS="$HOME_DIR/config.default.json"
