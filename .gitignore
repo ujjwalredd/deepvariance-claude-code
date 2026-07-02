@@ -1,0 +1,5 @@
+# local user config (never commit secrets)
+config.json
+*.log
+.DS_Store
+node_modules/

@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+# deepvariance-claude-code :: CLI
+# Run Claude Code against a self-hosted Qwen (OpenAI-compatible) backend.
+#   deepvariance launch claude [claude args...]
+#   deepvariance config     # (re)enter API key / email / endpoint
+#   deepvariance help | version
+set -euo pipefail
+
+VERSION="1.0.0"
+HOME_DIR="${DEEPVARIANCE_HOME:-$HOME/.deepvariance}"
+LIB="$HOME_DIR/lib/proxy.js"
+DEFAULTS="$HOME_DIR/config.default.json"
+CONF="$HOME_DIR/config.json"
+
+die() { echo "deepvariance: $*" >&2; exit 1; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+[ -f "$LIB" ] || die "proxy not found at $LIB — reinstall with the install.sh one-liner"
+have node || die "node is required (>=18). Install Node then retry."
+have claude || die "claude not found. Install with: npm install -g @anthropic-ai/claude-code"
+
+# jv KEY FILE  -> print JSON string value at top-level KEY (or empty).
+# Note: with `node -e`, the first CLI arg is argv[1] (there is no script path).
+jv() { node -e 'try{const c=require(process.argv[1]);const v=c[process.argv[2]];process.stdout.write(v==null?"":String(v))}catch(e){}' "$2" "$1"; }
+
+default_of() { [ -f "$DEFAULTS" ] && jv "$1" "$DEFAULTS" || true; }
+
+# Interactive first-run (or `config`) setup. Writes CONF merged with defaults.
+setup_config() {
+  local def_base cur_base cur_email api_base email key
+  def_base="$(default_of apiBase)"
+  cur_base="$( [ -f "$CONF" ] && jv apiBase "$CONF" || echo "$def_base" )"
+  cur_email="$( [ -f "$CONF" ] && jv email "$CONF" || echo "" )"
+
+  echo "── deepvariance setup ─────────────────────────────"
+  echo "Configuring Claude Code -> self-hosted model."
+  echo
+
+  read -r -p "Model API base URL [$cur_base]: " api_base
+  api_base="${api_base:-$cur_base}"
+
+  read -r -p "Your email (sent as X-User-Email for usage logging)${cur_email:+ [$cur_email]}: " email
+  email="${email:-$cur_email}"
+  [ -n "$email" ] || die "email is required"
+
+  # Key entered hidden; keep existing if blank and one already saved.
+  read -r -s -p "API key${CONF:+ (leave blank to keep existing)}: " key; echo
+  if [ -z "$key" ] && [ -f "$CONF" ]; then
+    key="$(jv apiKey "$CONF")"
+  fi
+  [ -n "$key" ] || die "API key is required"
+
+  # Validate the key against the endpoint before saving.
+  echo -n "Validating key... "
+  local code
+  code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 25 "$api_base/models" -H "Authorization: Bearer $key" -H "X-User-Email: $email" || echo "000")"
+  if [ "$code" = "200" ]; then
+    echo "ok"
+  elif [ "$code" = "401" ] || [ "$code" = "403" ]; then
+    die "endpoint rejected the key (HTTP $code). Re-run: deepvariance config"
+  else
+    echo "warning: could not verify (HTTP $code) — saving anyway"
+  fi
+
+  mkdir -p "$HOME_DIR"
+  API_BASE="$api_base" EMAIL="$email" KEY="$key" DEFAULTS_FILE="$DEFAULTS" OUT="$CONF" node -e '
+    const fs=require("fs");
+    let d={}; try{ d=require(process.env.DEFAULTS_FILE); }catch(e){}
+    const merged=Object.assign({}, d, {
+      apiBase: process.env.API_BASE,
+      email:   process.env.EMAIL,
+      apiKey:  process.env.KEY,
+    });
+    fs.writeFileSync(process.env.OUT, JSON.stringify(merged, null, 2)+"\n");
+  '
+  chmod 600 "$CONF"
+  echo "Saved $CONF (chmod 600)."
+  echo
+}
+
+launch_claude() {
+  [ -f "$CONF" ] || setup_config
+  # Ensure required fields exist (older/partial config -> re-run setup).
+  if [ -z "$(jv apiKey "$CONF")" ] || [ -z "$(jv email "$CONF")" ]; then
+    setup_config
+  fi
+
+  local api_base key model email ctx port
+  api_base="$(jv apiBase "$CONF")"; [ -n "$api_base" ] || api_base="$(default_of apiBase)"
+  model="$(jv model "$CONF")";     [ -n "$model" ]    || model="$(default_of model)"
+  ctx="$(jv modelCtx "$CONF")";    [ -n "$ctx" ]      || ctx="$(default_of modelCtx)"; ctx="${ctx:-32768}"
+  port="$(jv port "$CONF")";       [ -n "$port" ]     || port="$(default_of port)"; port="${port:-8787}"
+  key="$(jv apiKey "$CONF")"
+  email="$(jv email "$CONF")"
+
+  # Start the emulation proxy.
+  UPSTREAM_BASE="$api_base" UPSTREAM_KEY="$key" UPSTREAM_MODEL="$model" \
+    USER_EMAIL="$email" MODEL_CTX="$ctx" PORT="$port" \
+    PROXY_DEBUG="${PROXY_DEBUG:-0}" \
+    node "$LIB" &
+  local proxy_pid=$!
+  trap 'kill $proxy_pid 2>/dev/null || true' EXIT
+
+  # Wait for health (max ~10s).
+  local i
+  for i in $(seq 1 20); do
+    if curl -sS "http://127.0.0.1:$port/health" >/dev/null 2>&1; then break; fi
+    sleep 0.5
+  done
+
+  # Point Claude Code at the proxy (now Anthropic-compatible).
+  export ANTHROPIC_BASE_URL="http://127.0.0.1:$port"
+  export ANTHROPIC_AUTH_TOKEN="deepvariance"
+  export ANTHROPIC_API_KEY=""
+  export ANTHROPIC_MODEL="$model"
+  export ANTHROPIC_SMALL_FAST_MODEL="$model"
+
+  echo "deepvariance: proxy on :$port -> $model  (user: $email)"
+  claude "$@"
+}
+
+cmd="${1:-help}"
+case "$cmd" in
+  launch)
+    target="${2:-}"
+    [ "$target" = "claude" ] || die "only 'launch claude' is supported (got '${target:-}')"
+    shift 2 || true
+    launch_claude "$@"
+    ;;
+  config)
+    setup_config
+    ;;
+  version|-v|--version)
+    echo "deepvariance $VERSION"
+    ;;
+  help|-h|--help|*)
+    cat <<EOF
+deepvariance $VERSION — Claude Code on a self-hosted model
+
+Usage:
+  deepvariance launch claude [args]   Start proxy + launch Claude Code
+  deepvariance config                 (Re)enter API key / email / endpoint
+  deepvariance version
+  deepvariance help
+
+First run of 'launch claude' prompts for your API key + email and saves them to
+$CONF (chmod 600). Nothing is sent anywhere except your configured model endpoint.
+EOF
+    ;;
+esac
