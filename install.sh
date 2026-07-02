@@ -4,8 +4,9 @@
 set -euo pipefail
 
 REPO="ujjwalredd/deepvariance-claude-code"
-BRANCH="main"
-RAW="https://raw.githubusercontent.com/$REPO/$BRANCH"
+VERSION="1.0.1"
+REF="${DEEPVARIANCE_REF:-v$VERSION}"
+RAW="https://raw.githubusercontent.com/$REPO/$REF"
 HOME_DIR="$HOME/.deepvariance"
 
 say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
@@ -21,7 +22,7 @@ add_path_to_rc() {
   printf '\n# added by deepvariance-claude-code installer\n%s\n' "$line" >> "$rc"
 }
 
-say "deepvariance-claude-code installer"
+say "deepvariance-claude-code installer ($REF)"
 
 # 1. Node >= 18
 have node || die "Node.js >= 18 is required. Install from https://nodejs.org then re-run."
@@ -38,10 +39,14 @@ else
   npm install -g @anthropic-ai/claude-code || die "failed to install Claude Code"
 fi
 
-# 3. Pick a bin dir. Prefer the npm global bin — it's already on PATH (that's
-#    where `claude` lives), so `deepvariance` works immediately, no PATH edits.
+# 3. Pick a bin dir. Prefer updating the executable the shell already resolves,
+#    otherwise prefer the npm global bin — it's already on PATH where `claude`
+#    lives. Fall back to ~/.local/bin when needed.
+EXISTING_BIN="$(command -v deepvariance 2>/dev/null || true)"
 NPM_BIN="$(npm prefix -g 2>/dev/null)/bin"
-if [ -d "$NPM_BIN" ] && [ -w "$NPM_BIN" ] && on_path "$NPM_BIN"; then
+if [ -n "$EXISTING_BIN" ] && [ -w "$EXISTING_BIN" ] && [ -w "$(dirname "$EXISTING_BIN")" ]; then
+  BIN_DIR="$(dirname "$EXISTING_BIN")"
+elif [ -d "$NPM_BIN" ] && [ -w "$NPM_BIN" ] && on_path "$NPM_BIN"; then
   BIN_DIR="$NPM_BIN"
 else
   BIN_DIR="$HOME/.local/bin"
@@ -72,6 +77,14 @@ if ! on_path "$BIN_DIR"; then
 fi
 
 say "Installed."
+echo
+echo "  Installed from: $REF"
+echo "  Binary: $BIN_DIR/deepvariance"
+if [ -n "$EXISTING_BIN" ] && [ "$EXISTING_BIN" != "$BIN_DIR/deepvariance" ] && on_path "$(dirname "$EXISTING_BIN")"; then
+  echo
+  echo "  Warning: existing deepvariance at $EXISTING_BIN may still be earlier on PATH."
+  echo "  Open a new terminal after PATH update, or remove the old binary."
+fi
 echo
 echo "  Start it with:"
 echo "      deepvariance launch claude"
