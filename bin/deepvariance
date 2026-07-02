@@ -17,6 +17,7 @@ have() { command -v "$1" >/dev/null 2>&1; }
 
 [ -f "$LIB" ] || die "proxy not found at $LIB — reinstall with the install.sh one-liner"
 have node || die "node is required (>=18). Install Node then retry."
+have curl || die "curl is required. Install curl then retry."
 have claude || die "claude not found. Install with: npm install -g @anthropic-ai/claude-code"
 
 # jv KEY FILE  -> print JSON string value at top-level KEY (or empty).
@@ -27,10 +28,11 @@ default_of() { [ -f "$DEFAULTS" ] && jv "$1" "$DEFAULTS" || true; }
 
 # Interactive first-run (or `config`) setup. Writes CONF merged with defaults.
 setup_config() {
-  local def_base cur_base cur_email api_base email key
+  local def_base cur_base cur_email cur_key key_hint api_base email key
   def_base="$(default_of apiBase)"
   cur_base="$( [ -f "$CONF" ] && jv apiBase "$CONF" || echo "$def_base" )"
   cur_email="$( [ -f "$CONF" ] && jv email "$CONF" || echo "" )"
+  cur_key="$( [ -f "$CONF" ] && jv apiKey "$CONF" || echo "" )"
 
   echo "── deepvariance setup ─────────────────────────────"
   echo "Configuring Claude Code -> self-hosted model."
@@ -44,10 +46,10 @@ setup_config() {
   [ -n "$email" ] || die "email is required"
 
   # Key entered hidden; keep existing if blank and one already saved.
-  read -r -s -p "API key${CONF:+ (leave blank to keep existing)}: " key; echo
-  if [ -z "$key" ] && [ -f "$CONF" ]; then
-    key="$(jv apiKey "$CONF")"
-  fi
+  key_hint=""
+  [ -n "$cur_key" ] && key_hint=" (leave blank to keep existing)"
+  read -r -s -p "API key$key_hint: " key; echo
+  [ -z "$key" ] && key="$cur_key"
   [ -n "$key" ] || die "API key is required"
 
   # Validate the key against the endpoint before saving.
@@ -99,14 +101,22 @@ launch_claude() {
     PROXY_DEBUG="${PROXY_DEBUG:-0}" \
     node "$LIB" &
   local proxy_pid=$!
-  trap 'kill $proxy_pid 2>/dev/null || true' EXIT
+  trap "kill $proxy_pid 2>/dev/null || true" EXIT
 
   # Wait for health (max ~10s).
-  local i
+  local i healthy=0
   for i in $(seq 1 20); do
-    if curl -sS "http://127.0.0.1:$port/health" >/dev/null 2>&1; then break; fi
+    if curl -sS "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
+      healthy=1
+      break
+    fi
+    if ! kill -0 "$proxy_pid" 2>/dev/null; then
+      wait "$proxy_pid" 2>/dev/null || true
+      die "proxy failed to start on port $port"
+    fi
     sleep 0.5
   done
+  [ "$healthy" = "1" ] || die "proxy did not become healthy on port $port"
 
   # Point Claude Code at the proxy (now Anthropic-compatible).
   export ANTHROPIC_BASE_URL="http://127.0.0.1:$port"

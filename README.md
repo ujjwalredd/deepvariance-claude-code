@@ -1,6 +1,6 @@
 # deepvariance-claude-code
 
-Run [Claude Code](https://github.com/anthropics/claude-code) against a **self-hosted, OpenAI-compatible model** (e.g. `Qwen/Qwen2.5-Coder-32B-Instruct` on vLLM) — the same one-command feel as `ollama launch claude`:
+Run [Claude Code](https://github.com/anthropics/claude-code) against a **self-hosted, OpenAI-compatible model** (e.g. `Qwen/Qwen2.5-Coder-32B-Instruct` on vLLM):
 
 ```
 deepvariance launch claude
@@ -40,7 +40,7 @@ These are saved to `~/.deepvariance/config.json` (`chmod 600`). Nothing is commi
 ```
 Claude Code ──Anthropic /v1/messages──▶ deepvariance proxy ──OpenAI /chat/completions──▶ your model (vLLM)
    ▲                                         │  • render Anthropic tools -> Hermes prompt
-   │                                         │  • call backend WITHOUT `tools` (dodge missing-parser 400)
+   │                                         │  • call backend WITHOUT `tools` (dodge missing-parser 400)                       │
    └────────── Anthropic response ◀──────────┘  • parse <tool_call> back into tool_use
                                                 • cap output to the model context window
                                                 • add X-User-Email header
