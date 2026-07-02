@@ -6,7 +6,7 @@ Run [Claude Code](https://github.com/anthropics/claude-code) against a **self-ho
 deepvariance launch claude
 ```
 
-Claude Code speaks the **Anthropic Messages API**; your model speaks the **OpenAI Chat Completions API**. deepvariance runs a tiny local proxy that translates between them and supports tool-calling (so file read/edit/bash work). It tries native OpenAI tool calls first when available, then falls back to Ollama-style prompt parsing when the backend was started without vLLM's `--tool-call-parser`.
+Claude Code speaks the **Anthropic Messages API**; your model speaks the **OpenAI Chat Completions API**. deepvariance runs a tiny local proxy that translates between them and supports tool-calling (so file read/edit/bash work). It tries native OpenAI tool calls first when available, then falls back to Ollama-style prompt parsing when the backend was started without vLLM's `--tool-call-parser`. Responses **stream token-by-token**; in emulated mode a hold-back buffer keeps tool-call tags from leaking into the visible answer.
 
 `deepvariance launch claude` starts Claude Code in `--safe-mode` by default. This disables user hooks, plugins, MCP servers, custom agents, skills, and other Claude Code customizations so unrelated local setup cannot hijack prompts.
 
@@ -14,11 +14,21 @@ Claude Code speaks the **Anthropic Messages API**; your model speaks the **OpenA
 
 ## Install
 
+**Via npm** (works with `npx`, no copy step):
+
+```
+npm install -g deepvariance-claude-code
+# or run without installing:
+npx deepvariance-claude-code launch claude
+```
+
+**Via the curl installer:**
+
 ```
 curl -fsSL https://github.com/ujjwalredd/deepvariance-claude-code/raw/refs/heads/main/install.sh | bash
 ```
 
-Requires **Node ≥ 18**. The installer also installs Claude Code (`@anthropic-ai/claude-code`) if it isn't already present, then installs the latest code from `main`.
+Both require **Node ≥ 18** and install Claude Code (`@anthropic-ai/claude-code`) if it isn't already present. Config is saved to `~/.deepvariance/config.json` either way.
 
 ## Usage
 
@@ -55,7 +65,9 @@ Claude Code ──Anthropic /v1/messages──▶ deepvariance proxy ──OpenA
 
 Defaults live in [`config.default.json`](config.default.json): model, `apiBase`, `modelCtx` (context window), `toolMode`, `port`.
 
-Optional environment overrides on the proxy: `UPSTREAM_TIMEOUT_MS` (per-call timeout, default 120000), `UPSTREAM_RETRIES` (extra retries on transient 5xx/429, default 2), `PROXY_LOG_FILE` (append structured request logs to a file), `PROXY_DEBUG=1` (verbose logs). The proxy always emits one structured JSON log line per request to stderr (the API key is redacted). Endpoints: `GET /health` (process up), `GET /ready` (probes the upstream `/models`).
+`maxOutputTokens` (default 8192) caps the output headroom reserved from the context window; raise it for models/tasks that need longer answers.
+
+Optional environment overrides on the proxy: `MAX_OUTPUT_TOKENS` (output ceiling, default 8192), `UPSTREAM_TIMEOUT_MS` (per-call timeout, default 120000), `UPSTREAM_RETRIES` (extra retries on transient 5xx/429, default 2), `PROXY_LOG_FILE` (append structured request logs to a file), `PROXY_DEBUG=1` (verbose logs). The proxy always emits one structured JSON log line per request to stderr (the API key is redacted). Endpoints: `GET /health` (process up), `GET /ready` (probes the upstream `/models`).
 
 `toolMode` values:
 

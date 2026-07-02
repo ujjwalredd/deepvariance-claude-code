@@ -3,5 +3,6 @@
   "apiBase": "https://processor-particularly-prospective-columns.trycloudflare.com/v1",
   "modelCtx": 32768,
   "toolMode": "auto",
+  "maxOutputTokens": 8192,
   "port": 8787
 }

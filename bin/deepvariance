@@ -6,16 +6,28 @@
 #   deepvariance help | version
 set -euo pipefail
 
-VERSION="1.1.0"
+VERSION="1.2.0"
 HOME_DIR="${DEEPVARIANCE_HOME:-$HOME/.deepvariance}"
-LIB="$HOME_DIR/lib/proxy.js"
 DEFAULTS="$HOME_DIR/config.default.json"
 CONF="$HOME_DIR/config.json"
 
 die() { echo "deepvariance: $*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
-[ -f "$LIB" ] || die "proxy not found at $LIB — reinstall with the install.sh one-liner"
+# Resolve proxy.js. Prefer the curl-installer layout ($HOME_DIR/lib), then fall
+# back to a location relative to this script (npm/npx global install ships
+# bin/ and lib/ side by side, so there is no copy step).
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$HOME_DIR/lib/proxy.js" ]; then
+  LIB="$HOME_DIR/lib/proxy.js"
+elif [ -f "$SELF_DIR/../lib/proxy.js" ]; then
+  LIB="$SELF_DIR/../lib/proxy.js"
+  [ -f "$DEFAULTS" ] || DEFAULTS="$SELF_DIR/../config.default.json"
+else
+  LIB="$HOME_DIR/lib/proxy.js"
+fi
+
+[ -f "$LIB" ] || die "proxy not found (looked in $HOME_DIR/lib and $SELF_DIR/../lib) — reinstall"
 have node || die "node is required (>=18). Install Node then retry."
 have curl || die "curl is required. Install curl then retry."
 have claude || die "claude not found. Install with: npm install -g @anthropic-ai/claude-code"
@@ -87,12 +99,13 @@ launch_claude() {
     setup_config
   fi
 
-  local api_base key model email ctx port tool_mode
+  local api_base key model email ctx port tool_mode max_out
   api_base="$(jv apiBase "$CONF")"; [ -n "$api_base" ] || api_base="$(default_of apiBase)"
   model="$(jv model "$CONF")";     [ -n "$model" ]    || model="$(default_of model)"
   ctx="$(jv modelCtx "$CONF")";    [ -n "$ctx" ]      || ctx="$(default_of modelCtx)"; ctx="${ctx:-32768}"
   port="$(jv port "$CONF")";       [ -n "$port" ]     || port="$(default_of port)"; port="${port:-8787}"
   tool_mode="$(jv toolMode "$CONF")"; [ -n "$tool_mode" ] || tool_mode="$(default_of toolMode)"; tool_mode="${tool_mode:-auto}"
+  max_out="$(jv maxOutputTokens "$CONF")"; [ -n "$max_out" ] || max_out="$(default_of maxOutputTokens)"; max_out="${max_out:-8192}"
   key="$(jv apiKey "$CONF")"
   email="$(jv email "$CONF")"
 
@@ -103,6 +116,7 @@ launch_claude() {
   esac
   case "$ctx" in ''|*[!0-9]*) die "modelCtx must be an integer (got '$ctx')";; esac
   case "$port" in ''|*[!0-9]*) die "port must be an integer (got '$port')";; esac
+  case "$max_out" in ''|*[!0-9]*) die "maxOutputTokens must be an integer (got '$max_out')";; esac
 
   if curl -sS "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
     die "port $port already has a deepvariance proxy. Stop it with: deepvariance stop"
@@ -111,7 +125,7 @@ launch_claude() {
   # Start the Anthropic/OpenAI compatibility proxy.
   UPSTREAM_BASE="$api_base" UPSTREAM_KEY="$key" UPSTREAM_MODEL="$model" \
     USER_EMAIL="$email" MODEL_CTX="$ctx" PORT="$port" \
-    TOOL_MODE="$tool_mode" \
+    TOOL_MODE="$tool_mode" MAX_OUTPUT_TOKENS="$max_out" \
     PROXY_DEBUG="${PROXY_DEBUG:-0}" \
     node "$LIB" &
   local proxy_pid=$!

@@ -1,13 +1,42 @@
 {
   "name": "deepvariance-claude-code",
-  "version": "1.0.14",
-  "description": "Run Claude Code against a self-hosted OpenAI-compatible model via a local translation proxy",
+  "version": "1.2.0",
+  "description": "Run Claude Code against a self-hosted OpenAI-compatible model via a local translation proxy with true streaming and tool-calling",
   "license": "MIT",
-  "private": true,
+  "bin": {
+    "deepvariance": "bin/deepvariance"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "config.default.json",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=18"
   },
   "scripts": {
-    "test": "node --test && bash test/launcher.test.sh"
-  }
+    "test": "node --test && bash test/launcher.test.sh",
+    "prepublishOnly": "npm test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ujjwalredd/deepvariance-claude-code.git"
+  },
+  "homepage": "https://github.com/ujjwalredd/deepvariance-claude-code#readme",
+  "bugs": {
+    "url": "https://github.com/ujjwalredd/deepvariance-claude-code/issues"
+  },
+  "keywords": [
+    "claude-code",
+    "anthropic",
+    "openai",
+    "vllm",
+    "qwen",
+    "proxy",
+    "tool-calling",
+    "self-hosted",
+    "llm"
+  ]
 }

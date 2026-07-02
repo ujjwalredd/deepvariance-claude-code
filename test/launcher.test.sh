@@ -91,6 +91,25 @@ check "stop with no proxy exits 0" "$rc"
 echo "$out" | grep -q 'no running proxy found' && r=0 || r=1
 check "stop reports no running proxy" "$r"
 
+# 7. npm layout: bin/ and lib/ side by side, empty DEEPVARIANCE_HOME (no lib
+#    copy). The launcher must resolve proxy.js relative to its own location.
+NPMPKG="$TMP/npmpkg"
+mkdir -p "$NPMPKG/bin" "$NPMPKG/lib"
+cp "$ROOT/bin/deepvariance" "$NPMPKG/bin/deepvariance"
+cp "$ROOT/lib/proxy.js" "$NPMPKG/lib/proxy.js"
+cp "$ROOT/config.default.json" "$NPMPKG/config.default.json"
+chmod +x "$NPMPKG/bin/deepvariance"
+NPMHOME="$TMP/npmhome"; mkdir -p "$NPMHOME"
+cat > "$NPMHOME/config.json" <<'EOF'
+{ "apiBase":"http://127.0.0.1:1/v1","email":"t@e.com","apiKey":"k","model":"m","modelCtx":32768,"toolMode":"emulated","maxOutputTokens":8192,"port":18930 }
+EOF
+out="$(DEEPVARIANCE_HOME="$NPMHOME" /bin/bash "$NPMPKG/bin/deepvariance" launch claude 2>&1)" && rc=0 || rc=$?
+check "npm-layout launch exits 0 (resolves lib via script dir)" "$rc"
+echo "$out" | grep -q 'proxy not found' && r=1 || r=0
+check "npm-layout does not report missing proxy" "$r"
+echo "$out" | grep -q 'CLAUDE_ARGS:--safe-mode$' && r=0 || r=1
+check "npm-layout still launches claude with safe-mode" "$r"
+
 note ""
 note "launcher tests: $PASS passed, $FAIL failed"
 [ "$FAIL" = "0" ]

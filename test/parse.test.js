@@ -271,3 +271,34 @@ test('redact hides the upstream key and Bearer tokens', () => {
   const out = proxy.redact('call with Authorization: Bearer sk-secret-abc123 and more');
   assert.ok(!out.includes('sk-secret-abc123'), 'token redacted');
 });
+
+// ---- Part B: token estimator ---------------------------------------------
+
+test('approxTokens never undershoots the old chars/4 heuristic', () => {
+  const samples = [
+    'hello world',
+    'function f(x){ return x*2 + [1,2,3].map(n => n-1); }',
+    'A longer paragraph of prose that a user might paste into the chat window.',
+    '{"name":"Bash","arguments":{"command":"ls -la /tmp && echo done"}}',
+    'x'.repeat(1000),
+  ];
+  for (const s of samples) {
+    const old = Math.max(1, Math.ceil(s.length / 4));
+    assert.ok(proxy.approxTokens(s) >= old, 'estimate >= chars/4 for: ' + s.slice(0, 24));
+  }
+  assert.strictEqual(proxy.approxTokens(''), 1);
+});
+
+// ---- Part A: streaming hold-back primitives -------------------------------
+
+test('safeEmitLength holds back a trailing partial marker', () => {
+  assert.strictEqual(proxy.safeEmitLength('hello <tool_'), 'hello '.length, 'partial <tool_ held');
+  assert.strictEqual(proxy.safeEmitLength('all clear text'), 'all clear text'.length, 'nothing held');
+  assert.strictEqual(proxy.safeEmitLength('trailing ```'), 'trailing '.length, 'partial fence held');
+});
+
+test('earliestCompleteMarker finds the first tool-call marker', () => {
+  assert.strictEqual(proxy.earliestCompleteMarker('abc <tool_call>x'), 4);
+  assert.strictEqual(proxy.earliestCompleteMarker('no markers here'), -1);
+  assert.strictEqual(proxy.earliestCompleteMarker('{"name":"Bash"}'), 0);
+});
