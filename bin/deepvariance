@@ -6,7 +6,7 @@
 #   deepvariance help | version
 set -euo pipefail
 
-VERSION="1.0.12"
+VERSION="1.0.13"
 HOME_DIR="${DEEPVARIANCE_HOME:-$HOME/.deepvariance}"
 LIB="$HOME_DIR/lib/proxy.js"
 DEFAULTS="$HOME_DIR/config.default.json"
@@ -136,8 +136,35 @@ launch_claude() {
   export CLAUDE_CODE_SUBAGENT_MODEL="$model"
   export CLAUDE_CODE_ATTRIBUTION_HEADER=0
 
-  echo "deepvariance: proxy on :$port -> $model  (tools: $tool_mode, user: $email)"
-  claude "$@"
+  local add_safe_mode=1 safe_mode="on" arg
+  local claude_args=()
+  for arg in "$@"; do
+    case "$arg" in
+      --no-safe-mode)
+        add_safe_mode=0
+        safe_mode="off"
+        ;;
+      --safe-mode)
+        add_safe_mode=0
+        safe_mode="on"
+        claude_args+=("$arg")
+        ;;
+      --bare)
+        add_safe_mode=0
+        safe_mode="bare"
+        claude_args+=("$arg")
+        ;;
+      *)
+        claude_args+=("$arg")
+        ;;
+    esac
+  done
+  if [ "$add_safe_mode" = "1" ]; then
+    claude_args=(--safe-mode "${claude_args[@]}")
+  fi
+
+  echo "deepvariance: proxy on :$port -> $model  (tools: $tool_mode, safe-mode: $safe_mode, user: $email)"
+  claude "${claude_args[@]}"
 }
 
 cmd="${1:-help}"
@@ -160,9 +187,15 @@ deepvariance $VERSION — Claude Code on a self-hosted model
 
 Usage:
   deepvariance launch claude [args]   Start proxy + launch Claude Code
+  deepvariance launch claude --no-safe-mode
+                                      Launch with user Claude customizations enabled
   deepvariance config                 (Re)enter API key / email / endpoint
   deepvariance version
   deepvariance help
+
+By default, 'launch claude' adds Claude Code --safe-mode to disable user hooks,
+plugins, MCP servers, custom agents, skills, and other customizations. Pass
+--no-safe-mode to opt out for a session.
 
 First run of 'launch claude' prompts for your API key + email and saves them to
 $CONF (chmod 600). Nothing is sent anywhere except your configured model endpoint.

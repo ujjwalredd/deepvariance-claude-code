@@ -8,6 +8,8 @@ deepvariance launch claude
 
 Claude Code speaks the **Anthropic Messages API**; your model speaks the **OpenAI Chat Completions API**. deepvariance runs a tiny local proxy that translates between them and supports tool-calling (so file read/edit/bash work). It tries native OpenAI tool calls first when available, then falls back to Ollama-style prompt parsing when the backend was started without vLLM's `--tool-call-parser`.
 
+`deepvariance launch claude` starts Claude Code in `--safe-mode` by default. This disables user hooks, plugins, MCP servers, custom agents, skills, and other Claude Code customizations so unrelated local setup cannot hijack prompts.
+
 ---
 
 ## Install
@@ -21,7 +23,7 @@ Requires **Node ≥ 18**. The installer also installs Claude Code (`@anthropic-a
 Pin a release:
 
 ```
-curl -fsSL https://github.com/ujjwalredd/deepvariance-claude-code/raw/refs/heads/main/install.sh | DEEPVARIANCE_REF=v1.0.4 bash
+curl -fsSL https://github.com/ujjwalredd/deepvariance-claude-code/raw/refs/heads/main/install.sh | DEEPVARIANCE_REF=v1.0.13 bash
 ```
 
 Install a specific branch/tag/commit:
@@ -33,11 +35,14 @@ curl -fsSL https://github.com/ujjwalredd/deepvariance-claude-code/raw/refs/heads
 ## Usage
 
 ```
-deepvariance launch claude          # start proxy + Claude Code
-deepvariance launch claude -p "..."  # non-interactive, pass Claude Code args
-deepvariance config                 # re-enter API key / email / endpoint
+deepvariance launch claude                  # start proxy + Claude Code in safe mode
+deepvariance launch claude -p "..."          # non-interactive, pass Claude Code args
+deepvariance launch claude --no-safe-mode    # opt out of safe mode for this session
+deepvariance config                         # re-enter API key / email / endpoint
 deepvariance help
 ```
+
+Safe mode prevents user-level Claude Code hooks, plugins, MCP servers, custom agents, skills, and workflows from taking over generic prompts. Pass `--no-safe-mode` only when you intentionally want your local Claude Code customizations loaded.
 
 **First run** prompts for:
 
