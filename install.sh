@@ -4,7 +4,7 @@
 set -euo pipefail
 
 REPO="ujjwalredd/deepvariance-claude-code"
-VERSION="1.0.13"
+VERSION="1.0.14"
 REF="${DEEPVARIANCE_REF:-main}"
 HOME_DIR="$HOME/.deepvariance"
 
@@ -79,8 +79,12 @@ if ! on_path "$BIN_DIR"; then
   add_path_to_rc "$HOME/.zshrc"   "$PATH_LINE" || true
   add_path_to_rc "$HOME/.bashrc"  "$PATH_LINE" || true
   add_path_to_rc "$HOME/.profile" "$PATH_LINE" || true
-  # make sure at least one rc exists for login shells
-  [ -f "$HOME/.zshrc" ] || add_path_to_rc "$HOME/.zprofile" "$PATH_LINE" || true
+  # If no rc file took the line (none existed), create one so login shells
+  # pick up the PATH — add_path_to_rc itself never creates files.
+  if [ ! -f "$HOME/.zshrc" ] && [ ! -f "$HOME/.bashrc" ] && [ ! -f "$HOME/.profile" ]; then
+    touch "$HOME/.zprofile"
+    add_path_to_rc "$HOME/.zprofile" "$PATH_LINE" || true
+  fi
   export PATH="$BIN_DIR:$PATH"
   NEED_RESTART=1
 fi

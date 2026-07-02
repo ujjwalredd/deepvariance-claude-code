@@ -6,7 +6,7 @@
 #   deepvariance help | version
 set -euo pipefail
 
-VERSION="1.0.13"
+VERSION="1.0.14"
 HOME_DIR="${DEEPVARIANCE_HOME:-$HOME/.deepvariance}"
 LIB="$HOME_DIR/lib/proxy.js"
 DEFAULTS="$HOME_DIR/config.default.json"
@@ -159,12 +159,14 @@ launch_claude() {
         ;;
     esac
   done
+  # ${arr[@]+...} guard: bash 3.2 (macOS default) treats an empty array as
+  # unset under `set -u`, so bare "${claude_args[@]}" would abort the script.
   if [ "$add_safe_mode" = "1" ]; then
-    claude_args=(--safe-mode "${claude_args[@]}")
+    claude_args=(--safe-mode ${claude_args[@]+"${claude_args[@]}"})
   fi
 
   echo "deepvariance: proxy on :$port -> $model  (tools: $tool_mode, safe-mode: $safe_mode, user: $email)"
-  claude "${claude_args[@]}"
+  claude ${claude_args[@]+"${claude_args[@]}"}
 }
 
 cmd="${1:-help}"

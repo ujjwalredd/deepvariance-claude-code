@@ -23,7 +23,7 @@ Requires **Node ≥ 18**. The installer also installs Claude Code (`@anthropic-a
 Pin a release:
 
 ```
-curl -fsSL https://github.com/ujjwalredd/deepvariance-claude-code/raw/refs/heads/main/install.sh | DEEPVARIANCE_REF=v1.0.13 bash
+curl -fsSL https://github.com/ujjwalredd/deepvariance-claude-code/raw/refs/heads/main/install.sh | DEEPVARIANCE_REF=v1.0.14 bash
 ```
 
 Install a specific branch/tag/commit:
@@ -71,7 +71,7 @@ Defaults live in [`config.default.json`](config.default.json): model, `apiBase`,
 - `native` — require upstream OpenAI tool calls. Best when vLLM is launched with `--enable-auto-tool-choice --tool-call-parser hermes`.
 - `emulated` — always use prompt-based Ollama/Hermes-style tool parsing.
 
-MCP tools are hidden from the model by default. A configured MCP server/tool is exposed only when the latest user message explicitly names that MCP server or tool, for example `use h1b-sponsors` or `call mcp__h1b-sponsors__dataset_info`.
+MCP tools are hidden from the model by default. A configured MCP server/tool is exposed only when the most recent user *instruction* explicitly names that MCP server or tool, for example `use h1b-sponsors` or `call mcp__h1b-sponsors__dataset_info`. The opt-in persists for the whole agentic turn (tool-result continuations included) and resets when you send a new instruction that doesn't name it.
 
 ## Usage logging
 
@@ -82,9 +82,26 @@ Every upstream request carries `X-User-Email: <your email>`. Your model server r
 - **Tool-calling can be native or emulated.** Native is best when the backend supports OpenAI tools. Emulated mode is useful for backends started without vLLM's `--enable-auto-tool-choice --tool-call-parser hermes`, but complex multi-tool turns can still malform because the model is producing tool JSON as text.
 - **Context window** is bounded by the model (default 32K). Big repos / long sessions hit the cap; output is trimmed to fit.
 - **`WebSearch` / `WebFetch` do not work** — those are Anthropic-hosted tools. For web access on a local model, add a search **MCP server** (e.g. Brave/Tavily).
-- **MCP tools are opt-in per request** — deepvariance filters configured MCP tools unless the user explicitly names that MCP server/tool. This prevents unrelated MCPs from being picked for generic requests.
+- **MCP tools are opt-in per task turn** — deepvariance filters configured MCP tools unless the most recent user instruction explicitly names that MCP server/tool. This prevents unrelated MCPs from being picked for generic requests.
 - **No prompt caching, vision, or extended thinking** through the proxy.
 - If your endpoint is a Cloudflare **quick-tunnel** (`*.trycloudflare.com`), its URL rotates on restart — update it with `deepvariance config`.
+
+## Development
+
+Zero-dependency test suite using Node's built-in test runner:
+
+```
+npm test          # unit tests (tool-call parsing, trimming, MCP filtering)
+                  # + integration tests (proxy vs. mock upstream)
+                  # + launcher tests under /bin/bash (bash 3.2 compatible)
+```
+
+Individual suites:
+
+```
+node --test                      # JS tests only
+bash test/launcher.test.sh       # launcher/arg-handling tests only
+```
 
 ## Uninstall
 

@@ -1,0 +1,13 @@
+{
+  "name": "deepvariance-claude-code",
+  "version": "1.0.14",
+  "description": "Run Claude Code against a self-hosted OpenAI-compatible model via a local translation proxy",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test && bash test/launcher.test.sh"
+  }
+}
