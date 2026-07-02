@@ -20,18 +20,6 @@ curl -fsSL https://github.com/ujjwalredd/deepvariance-claude-code/raw/refs/heads
 
 Requires **Node ≥ 18**. The installer also installs Claude Code (`@anthropic-ai/claude-code`) if it isn't already present, then installs the latest code from `main`.
 
-Pin a release:
-
-```
-curl -fsSL https://github.com/ujjwalredd/deepvariance-claude-code/raw/refs/heads/main/install.sh | DEEPVARIANCE_REF=v1.0.14 bash
-```
-
-Install a specific branch/tag/commit:
-
-```
-curl -fsSL https://github.com/ujjwalredd/deepvariance-claude-code/raw/refs/heads/main/install.sh | DEEPVARIANCE_REF=<ref> bash
-```
-
 ## Usage
 
 ```
@@ -39,6 +27,8 @@ deepvariance launch claude                  # start proxy + Claude Code in safe 
 deepvariance launch claude -p "..."          # non-interactive, pass Claude Code args
 deepvariance launch claude --no-safe-mode    # opt out of safe mode for this session
 deepvariance config                         # re-enter API key / email / endpoint
+deepvariance doctor                         # preflight: node, claude, config, upstream
+deepvariance stop                           # stop a running proxy
 deepvariance help
 ```
 
@@ -65,6 +55,8 @@ Claude Code ──Anthropic /v1/messages──▶ deepvariance proxy ──OpenA
 
 Defaults live in [`config.default.json`](config.default.json): model, `apiBase`, `modelCtx` (context window), `toolMode`, `port`.
 
+Optional environment overrides on the proxy: `UPSTREAM_TIMEOUT_MS` (per-call timeout, default 120000), `UPSTREAM_RETRIES` (extra retries on transient 5xx/429, default 2), `PROXY_LOG_FILE` (append structured request logs to a file), `PROXY_DEBUG=1` (verbose logs). The proxy always emits one structured JSON log line per request to stderr (the API key is redacted). Endpoints: `GET /health` (process up), `GET /ready` (probes the upstream `/models`).
+
 `toolMode` values:
 
 - `auto` — try native upstream tool calls first, fall back to emulated prompt parsing on parser/tool errors.
@@ -79,7 +71,8 @@ Every upstream request carries `X-User-Email: <your email>`. Your model server r
 
 ## Limitations
 
-- **Tool-calling can be native or emulated.** Native is best when the backend supports OpenAI tools. Emulated mode is useful for backends started without vLLM's `--enable-auto-tool-choice --tool-call-parser hermes`, but complex multi-tool turns can still malform because the model is producing tool JSON as text.
+- **Tool-calling can be native or emulated.** Native is best when the backend supports OpenAI tools. Emulated mode is useful for backends started without vLLM's `--enable-auto-tool-choice --tool-call-parser hermes`. The proxy recovers many malformed shapes (tagged, function-style, object-style, and one or more bare JSON calls), but a weak model can still produce tool JSON the parser can't recover.
+- **Plan mode and parallel multi-agent (sub-agent) flows are unreliable on small local models.** Their heavy system prompts push the model into emitting several malformed tool calls at once. Prefer normal mode for local models (`Shift+Tab` toggles plan mode in Claude Code).
 - **Context window** is bounded by the model (default 32K). Big repos / long sessions hit the cap; output is trimmed to fit.
 - **`WebSearch` / `WebFetch` do not work** — those are Anthropic-hosted tools. For web access on a local model, add a search **MCP server** (e.g. Brave/Tavily).
 - **MCP tools are opt-in per task turn** — deepvariance filters configured MCP tools unless the most recent user instruction explicitly names that MCP server/tool. This prevents unrelated MCPs from being picked for generic requests.

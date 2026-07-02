@@ -207,3 +207,67 @@ test('regression: fallback does NOT fire on unrelated 400s', () => {
   assert.strictEqual(proxy.upstreamSupportsFallback(400, 'unsupported parameter: logprobs'), false);
   assert.strictEqual(proxy.upstreamSupportsFallback(500, 'tool_choice error'), false, 'non-4xx never falls back');
 });
+
+// ---- Part A: robust multi/array/case-tolerant bare-call parsing ----------
+
+const AGENT_TOOLS = [{ name: 'Agent' }, { name: 'Bash' }, { name: 'Write' }, { name: 'Read' }];
+
+test('regression: three concatenated bare JSON calls (the observed plan-mode leak)', () => {
+  const raw =
+    '{"name":"Agent","arguments":{"description":"a","subagent_type":"explore"}}\n' +
+    '{"name":"Agent","arguments":{"description":"b"}}\n' +
+    '{"name":"Agent","arguments":{"description":"c"}}';
+  const { text, toolCalls } = proxy.parseToolCalls(raw, AGENT_TOOLS);
+  assert.strictEqual(toolCalls.length, 3, 'all three calls recovered');
+  assert.ok(toolCalls.every(c => c.name === 'Agent'));
+  assert.strictEqual(text, '', 'no JSON leaked to visible text');
+});
+
+test('JSON array of tool calls is parsed', () => {
+  const raw = '[{"name":"bash","arguments":{"command":"ls"}},{"name":"write","arguments":{"file_path":"/a","content":"x"}}]';
+  const { toolCalls } = proxy.parseToolCalls(raw, AGENT_TOOLS);
+  assert.deepStrictEqual(toolCalls.map(c => c.name), ['Bash', 'Write'], 'names canonicalized');
+});
+
+test('lowercase / mis-cased tool names are canonicalized', () => {
+  const { toolCalls } = proxy.parseToolCalls('{"name":"agent","arguments":{"description":"x"}}', AGENT_TOOLS);
+  assert.strictEqual(toolCalls.length, 1);
+  assert.strictEqual(toolCalls[0].name, 'Agent');
+});
+
+test('mixed <tool_call> + trailing bare blob: both captured, prose survives', () => {
+  const raw = 'Sure:\n<tool_call>{"name":"Bash","arguments":{"command":"ls"}}</tool_call>\n' +
+    'and also {"name":"Write","arguments":{"file_path":"/a","content":"x"}} done';
+  const { text, toolCalls } = proxy.parseToolCalls(raw, AGENT_TOOLS);
+  assert.deepStrictEqual(toolCalls.map(c => c.name), ['Bash', 'Write']);
+  assert.ok(text.includes('Sure:') && text.includes('done'), 'surrounding prose kept');
+  assert.ok(!text.includes('"name":"Write"'), 'bare call spliced out');
+});
+
+test('bare blob for an unknown tool is not extracted', () => {
+  const raw = '{"name":"Nope","arguments":{"x":1}}';
+  const { text, toolCalls } = proxy.parseToolCalls(raw, AGENT_TOOLS);
+  assert.strictEqual(toolCalls.length, 0);
+  assert.ok(text.includes('Nope'), 'unrecognized JSON left in text');
+});
+
+test('prose JSON without name/arguments is left untouched', () => {
+  const raw = 'Config looks like {"port": 8787, "host": "localhost"} in the file.';
+  const { text, toolCalls } = proxy.parseToolCalls(raw, AGENT_TOOLS);
+  assert.strictEqual(toolCalls.length, 0);
+  assert.ok(text.includes('8787'));
+});
+
+test('scanBareJsonCalls returns calls with spans', () => {
+  const { calls, spans } = proxy.scanBareJsonCalls('{"name":"Bash","arguments":{"command":"ls"}}', new Set(['Bash']));
+  assert.strictEqual(calls.length, 1);
+  assert.strictEqual(spans.length, 1);
+});
+
+// ---- redaction ------------------------------------------------------------
+
+test('redact hides the upstream key and Bearer tokens', () => {
+  // UPSTREAM_KEY is empty under PROXY_TEST, so only the Bearer pattern applies.
+  const out = proxy.redact('call with Authorization: Bearer sk-secret-abc123 and more');
+  assert.ok(!out.includes('sk-secret-abc123'), 'token redacted');
+});

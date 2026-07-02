@@ -6,7 +6,7 @@
 #   deepvariance help | version
 set -euo pipefail
 
-VERSION="1.0.14"
+VERSION="1.1.0"
 HOME_DIR="${DEEPVARIANCE_HOME:-$HOME/.deepvariance}"
 LIB="$HOME_DIR/lib/proxy.js"
 DEFAULTS="$HOME_DIR/config.default.json"
@@ -96,8 +96,16 @@ launch_claude() {
   key="$(jv apiKey "$CONF")"
   email="$(jv email "$CONF")"
 
+  # Fail fast on obviously-bad config instead of handing garbage to the proxy.
+  case "$api_base" in
+    http://*|https://*) : ;;
+    *) die "apiBase must be an http(s) URL (got '$api_base'). Fix with: deepvariance config" ;;
+  esac
+  case "$ctx" in ''|*[!0-9]*) die "modelCtx must be an integer (got '$ctx')";; esac
+  case "$port" in ''|*[!0-9]*) die "port must be an integer (got '$port')";; esac
+
   if curl -sS "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
-    die "port $port already has a deepvariance proxy. Stop the old process or change port in $CONF"
+    die "port $port already has a deepvariance proxy. Stop it with: deepvariance stop"
   fi
 
   # Start the Anthropic/OpenAI compatibility proxy.
@@ -107,7 +115,8 @@ launch_claude() {
     PROXY_DEBUG="${PROXY_DEBUG:-0}" \
     node "$LIB" &
   local proxy_pid=$!
-  trap "kill $proxy_pid 2>/dev/null || true" EXIT
+  echo "$proxy_pid" > "$HOME_DIR/proxy.pid" 2>/dev/null || true
+  trap "kill $proxy_pid 2>/dev/null || true; rm -f '$HOME_DIR/proxy.pid' 2>/dev/null || true" EXIT
 
   # Wait for health (max ~10s).
   local i healthy=0
@@ -169,6 +178,81 @@ launch_claude() {
   claude ${claude_args[@]+"${claude_args[@]}"}
 }
 
+# Stop a running proxy: prefer the pidfile, fall back to whatever is serving
+# /health on the configured port.
+stop_proxy() {
+  local port pid stopped=0
+  port="$( [ -f "$CONF" ] && jv port "$CONF" || echo "" )"; port="${port:-$(default_of port)}"; port="${port:-8787}"
+  if [ -f "$HOME_DIR/proxy.pid" ]; then
+    pid="$(cat "$HOME_DIR/proxy.pid" 2>/dev/null || true)"
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      kill "$pid" 2>/dev/null && stopped=1
+    fi
+    rm -f "$HOME_DIR/proxy.pid" 2>/dev/null || true
+  fi
+  if [ "$stopped" = "0" ]; then
+    if curl -sS "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
+      pid="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | head -1 || true)"
+      if [ -n "$pid" ]; then kill "$pid" 2>/dev/null && stopped=1; fi
+    fi
+  fi
+  if [ "$stopped" = "1" ]; then
+    echo "deepvariance: stopped proxy on port $port"
+  else
+    echo "deepvariance: no running proxy found on port $port"
+  fi
+}
+
+# Preflight checklist for "is this machine ready to run real sessions".
+doctor() {
+  local fails=0 pass="  \033[1;32mok\033[0m" fail="  \033[1;31mFAIL\033[0m"
+  echo "── deepvariance doctor ────────────────────────────"
+
+  local node_major
+  if have node && node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null)" && [ "${node_major:-0}" -ge 18 ]; then
+    printf '%b node %s\n' "$pass" "$(node -v)"
+  else
+    printf '%b node >= 18 required (found %s)\n' "$fail" "$(node -v 2>/dev/null || echo none)"; fails=$((fails+1))
+  fi
+
+  if have claude; then printf '%b claude %s\n' "$pass" "$(claude --version 2>/dev/null | head -1)"
+  else printf '%b claude not found (npm install -g @anthropic-ai/claude-code)\n' "$fail"; fails=$((fails+1)); fi
+
+  [ -f "$LIB" ] && printf '%b proxy library present\n' "$pass" || { printf '%b proxy library missing at %s\n' "$fail" "$LIB"; fails=$((fails+1)); }
+
+  if [ ! -f "$CONF" ]; then
+    printf '%b no config yet — run: deepvariance config\n' "$fail"; fails=$((fails+1))
+  elif ! node -e 'require(process.argv[1])' "$CONF" >/dev/null 2>&1; then
+    printf '%b config is not valid JSON (%s)\n' "$fail" "$CONF"; fails=$((fails+1))
+  else
+    printf '%b config valid (%s)\n' "$pass" "$CONF"
+    local api_base key email port
+    api_base="$(jv apiBase "$CONF")"; key="$(jv apiKey "$CONF")"; email="$(jv email "$CONF")"
+    port="$(jv port "$CONF")"; port="${port:-8787}"
+    [ -n "$key" ]   && printf '%b api key set\n' "$pass"   || { printf '%b api key missing\n' "$fail"; fails=$((fails+1)); }
+    [ -n "$email" ] && printf '%b email set (%s)\n' "$pass" "$email" || { printf '%b email missing\n' "$fail"; fails=$((fails+1)); }
+    case "$api_base" in http://*|https://*) printf '%b apiBase looks like a URL\n' "$pass";; *) printf '%b apiBase is not an http(s) URL\n' "$fail"; fails=$((fails+1));; esac
+
+    if [ -n "$api_base" ] && [ -n "$key" ]; then
+      local code
+      code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$api_base/models" -H "Authorization: Bearer $key" ${email:+-H "X-User-Email: $email"} 2>/dev/null || echo 000)"
+      if [ "$code" = "200" ]; then printf '%b upstream reachable (%s/models -> 200)\n' "$pass" "$api_base"
+      elif [ "$code" = "401" ] || [ "$code" = "403" ]; then printf '%b upstream rejected the key (HTTP %s)\n' "$fail" "$code"; fails=$((fails+1))
+      else printf '%b upstream not reachable (HTTP %s)\n' "$fail" "$code"; fails=$((fails+1)); fi
+    fi
+
+    if curl -sS "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
+      printf '%b note: a proxy is already running on port %s\n' "$pass" "$port"
+    else
+      printf '%b port %s is free\n' "$pass" "$port"
+    fi
+  fi
+
+  echo "───────────────────────────────────────────────────"
+  if [ "$fails" = "0" ]; then echo "All checks passed."; return 0
+  else echo "$fails check(s) failed."; return 1; fi
+}
+
 cmd="${1:-help}"
 case "$cmd" in
   launch)
@@ -179,6 +263,12 @@ case "$cmd" in
     ;;
   config)
     setup_config
+    ;;
+  doctor)
+    doctor
+    ;;
+  stop)
+    stop_proxy
     ;;
   version|-v|--version)
     echo "deepvariance $VERSION"
@@ -192,6 +282,8 @@ Usage:
   deepvariance launch claude --no-safe-mode
                                       Launch with user Claude customizations enabled
   deepvariance config                 (Re)enter API key / email / endpoint
+  deepvariance doctor                 Preflight checks (node, claude, config, upstream)
+  deepvariance stop                   Stop a running proxy
   deepvariance version
   deepvariance help
 

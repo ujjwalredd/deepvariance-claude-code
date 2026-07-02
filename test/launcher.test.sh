@@ -67,6 +67,30 @@ check "launch --no-safe-mode exits 0" "$rc"
 echo "$out" | grep -q 'CLAUDE_ARGS:$' && r=0 || r=1
 check "--no-safe-mode passes no args to claude" "$r"
 
+# 4. Invalid config (bad apiBase) fails fast instead of launching.
+cat > "$DEEPVARIANCE_HOME/config.json" <<'EOF'
+{ "apiBase": "not-a-url", "email": "test@example.com", "apiKey": "k", "model": "m", "modelCtx": 32768, "toolMode": "emulated", "port": 18920 }
+EOF
+out="$(/bin/bash "$ROOT/bin/deepvariance" launch claude 2>&1)" && rc=0 || rc=$?
+[ "$rc" != "0" ] && r=0 || r=1
+check "launch with bad apiBase exits non-zero" "$r"
+echo "$out" | grep -q 'apiBase must be an http' && r=0 || r=1
+check "bad apiBase prints a clear error" "$r"
+
+# 5. doctor exits non-zero when there is no config, and runs under bash 3.2.
+rm -f "$DEEPVARIANCE_HOME/config.json"
+out="$(/bin/bash "$ROOT/bin/deepvariance" doctor 2>&1)" && rc=0 || rc=$?
+[ "$rc" != "0" ] && r=0 || r=1
+check "doctor with no config exits non-zero" "$r"
+echo "$out" | grep -q 'deepvariance doctor' && r=0 || r=1
+check "doctor prints its checklist header" "$r"
+
+# 6. stop with no running proxy reports cleanly and exits 0.
+out="$(/bin/bash "$ROOT/bin/deepvariance" stop 2>&1)" && rc=0 || rc=$?
+check "stop with no proxy exits 0" "$rc"
+echo "$out" | grep -q 'no running proxy found' && r=0 || r=1
+check "stop reports no running proxy" "$r"
+
 note ""
 note "launcher tests: $PASS passed, $FAIL failed"
 [ "$FAIL" = "0" ]
