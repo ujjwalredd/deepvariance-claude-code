@@ -6,7 +6,7 @@
 #   deepvariance help | version
 set -euo pipefail
 
-VERSION="1.2.1"
+VERSION="1.2.2"
 HOME_DIR="${DEEPVARIANCE_HOME:-$HOME/.deepvariance}"
 DEFAULTS="$HOME_DIR/config.default.json"
 CONF="$HOME_DIR/config.json"
@@ -50,20 +50,31 @@ setup_config() {
   echo "Configuring Claude Code -> self-hosted model."
   echo
 
-  # Model API base URL is required and must be an http(s) URL. There is no
-  # working default (the old bundled tunnel URL rotates and dies), so the user
-  # must supply a live endpoint.
-  local base_prompt="Model API base URL"
-  [ -n "$cur_base" ] && base_prompt="$base_prompt [$cur_base]"
-  while :; do
-    read -r -p "$base_prompt: " api_base
-    api_base="${api_base:-$cur_base}"
-    case "$api_base" in
-      http://*|https://*) break ;;
-      "") echo "  A model API base URL is required (e.g. https://your-host/v1)." ;;
-      *)  echo "  Must start with http:// or https:// (got '$api_base')." ;;
-    esac
-  done
+  # Model API base URL comes from the baked-in default (config.default.json).
+  # Users only supply email + API key. It can still be overridden by an env var
+  # or by editing config.json, and if no default is baked we fall back to a
+  # prompt so setup never produces an empty endpoint.
+  api_base="${DEEPVARIANCE_API_BASE:-$cur_base}"
+  case "$api_base" in
+    http://*|https://*)
+      echo "Model endpoint: $api_base"
+      echo "(baked-in default — to change it, edit $CONF or set DEEPVARIANCE_API_BASE)"
+      echo
+      ;;
+    *)
+      local base_prompt="Model API base URL"
+      [ -n "$cur_base" ] && base_prompt="$base_prompt [$cur_base]"
+      while :; do
+        read -r -p "$base_prompt: " api_base
+        api_base="${api_base:-$cur_base}"
+        case "$api_base" in
+          http://*|https://*) break ;;
+          "") echo "  A model API base URL is required (e.g. https://your-host/v1)." ;;
+          *)  echo "  Must start with http:// or https:// (got '$api_base')." ;;
+        esac
+      done
+      ;;
+  esac
 
   read -r -p "Your email (sent as X-User-Email for usage logging)${cur_email:+ [$cur_email]}: " email
   email="${email:-$cur_email}"
@@ -119,6 +130,7 @@ launch_claude() {
 
   local api_base key model email ctx port tool_mode max_out
   api_base="$(jv apiBase "$CONF")"; [ -n "$api_base" ] || api_base="$(default_of apiBase)"
+  api_base="${DEEPVARIANCE_API_BASE:-$api_base}"
   model="$(jv model "$CONF")";     [ -n "$model" ]    || model="$(default_of model)"
   ctx="$(jv modelCtx "$CONF")";    [ -n "$ctx" ]      || ctx="$(default_of modelCtx)"; ctx="${ctx:-32768}"
   port="$(jv port "$CONF")";       [ -n "$port" ]     || port="$(default_of port)"; port="${port:-8787}"

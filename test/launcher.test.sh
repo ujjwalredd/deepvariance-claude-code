@@ -131,6 +131,31 @@ check "DEEPVARIANCE_SKIP_UPSTREAM_CHECK bypasses preflight (exit 0)" "$rc"
 echo "$out" | grep -q 'CLAUDE_ARGS:--safe-mode$' && r=0 || r=1
 check "override still launches claude" "$r"
 
+# 10. Setup uses the baked-in URL; only email + key are prompted.
+SETUPHOME="$TMP/setuphome"; mkdir -p "$SETUPHOME"
+cat > "$SETUPHOME/config.default.json" <<'EOF'
+{ "model":"m","apiBase":"http://127.0.0.1:1/v1","modelCtx":32768,"toolMode":"auto","maxOutputTokens":8192,"port":8787 }
+EOF
+out="$(printf 'user@iu.edu\nsecret-key\n' | DEEPVARIANCE_HOME="$SETUPHOME" /bin/bash "$ROOT/bin/deepvariance" config 2>&1)" && rc=0 || rc=$?
+check "config setup exits 0 (baked URL, email+key on stdin)" "$rc"
+echo "$out" | grep -q 'Model endpoint: http://127.0.0.1:1/v1' && r=0 || r=1
+check "setup shows baked endpoint, does not prompt for URL" "$r"
+sbase="$(node -e 'console.log(require(process.argv[1]).apiBase)' "$SETUPHOME/config.json" 2>/dev/null)"
+[ "$sbase" = "http://127.0.0.1:1/v1" ] && r=0 || r=1
+check "saved config keeps the baked apiBase" "$r"
+semail="$(node -e 'console.log(require(process.argv[1]).email)' "$SETUPHOME/config.json" 2>/dev/null)"
+[ "$semail" = "user@iu.edu" ] && r=0 || r=1
+check "saved config has the entered email" "$r"
+
+# 11. DEEPVARIANCE_API_BASE overrides the baked default at launch.
+cat > "$DEEPVARIANCE_HOME/config.json" <<'EOF'
+{ "apiBase":"http://127.0.0.1:1/v1","email":"t@e.com","apiKey":"k","model":"m","modelCtx":32768,"toolMode":"emulated","maxOutputTokens":8192,"port":18932 }
+EOF
+out="$(DEEPVARIANCE_SKIP_UPSTREAM_CHECK=1 DEEPVARIANCE_API_BASE=http://127.0.0.1:2/v1 /bin/bash "$ROOT/bin/deepvariance" launch claude 2>&1)" && rc=0 || rc=$?
+check "DEEPVARIANCE_API_BASE override launch exits 0" "$rc"
+echo "$out" | grep -q 'upstream=http://127.0.0.1:2/v1' && r=0 || r=1
+check "override endpoint is used by the proxy" "$r"
+
 note ""
 note "launcher tests: $PASS passed, $FAIL failed"
 [ "$FAIL" = "0" ]

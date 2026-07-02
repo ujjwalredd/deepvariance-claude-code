@@ -44,11 +44,12 @@ deepvariance help
 
 Safe mode prevents user-level Claude Code hooks, plugins, MCP servers, custom agents, skills, and workflows from taking over generic prompts. Pass `--no-safe-mode` only when you intentionally want your local Claude Code customizations loaded.
 
-**First run** prompts for:
+**First run** prompts for only:
 
-- **Model API base URL** — your OpenAI-compatible endpoint, e.g. `https://your-host/v1` (required; must be reachable)
 - **Email** — sent as an `X-User-Email` header for usage logging (see below)
 - **API key** — entered hidden
+
+The **model API base URL** is baked in ([`config.default.json`](config.default.json)) so users don't configure it. Override per-machine by editing `~/.deepvariance/config.json` or setting `DEEPVARIANCE_API_BASE`.
 
 These are saved to `~/.deepvariance/config.json` (`chmod 600`). Nothing is committed to this repo and nothing is sent anywhere except your configured model endpoint.
 
