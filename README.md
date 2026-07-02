@@ -66,6 +66,8 @@ Defaults live in [`config.default.json`](config.default.json): model, `apiBase`,
 - `native` — require upstream OpenAI tool calls. Best when vLLM is launched with `--enable-auto-tool-choice --tool-call-parser hermes`.
 - `emulated` — always use prompt-based Ollama/Hermes-style tool parsing.
 
+MCP tools are hidden from the model by default. A configured MCP server/tool is exposed only when the latest user message explicitly names that MCP server or tool, for example `use h1b-sponsors` or `call mcp__h1b-sponsors__dataset_info`.
+
 ## Usage logging
 
 Every upstream request carries `X-User-Email: <your email>`. Your model server records it. This identifies who is driving requests — by using this tool you consent to that email + your usage being logged by the endpoint operator. There is no per-user auth isolation beyond the shared API key.
@@ -75,6 +77,7 @@ Every upstream request carries `X-User-Email: <your email>`. Your model server r
 - **Tool-calling can be native or emulated.** Native is best when the backend supports OpenAI tools. Emulated mode is useful for backends started without vLLM's `--enable-auto-tool-choice --tool-call-parser hermes`, but complex multi-tool turns can still malform because the model is producing tool JSON as text.
 - **Context window** is bounded by the model (default 32K). Big repos / long sessions hit the cap; output is trimmed to fit.
 - **`WebSearch` / `WebFetch` do not work** — those are Anthropic-hosted tools. For web access on a local model, add a search **MCP server** (e.g. Brave/Tavily).
+- **MCP tools are opt-in per request** — deepvariance filters configured MCP tools unless the user explicitly names that MCP server/tool. This prevents unrelated MCPs from being picked for generic requests.
 - **No prompt caching, vision, or extended thinking** through the proxy.
 - If your endpoint is a Cloudflare **quick-tunnel** (`*.trycloudflare.com`), its URL rotates on restart — update it with `deepvariance config`.
 
