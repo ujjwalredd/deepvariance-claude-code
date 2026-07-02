@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # deepvariance-claude-code installer
-#   curl -fsSL https://raw.githubusercontent.com/ujjwalredd/deepvariance-claude-code/main/install.sh | bash
+#   curl -fsSL https://github.com/ujjwalredd/deepvariance-claude-code/raw/refs/heads/main/install.sh | bash
 set -euo pipefail
 
 REPO="ujjwalredd/deepvariance-claude-code"

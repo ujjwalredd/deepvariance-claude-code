@@ -13,7 +13,7 @@ Claude Code speaks the **Anthropic Messages API**; your model speaks the **OpenA
 ## Install
 
 ```
-curl -fsSL https://raw.githubusercontent.com/ujjwalredd/deepvariance-claude-code/main/install.sh | bash
+curl -fsSL https://github.com/ujjwalredd/deepvariance-claude-code/raw/refs/heads/main/install.sh | bash
 ```
 
 Requires **Node ≥ 18**. The installer also installs Claude Code (`@anthropic-ai/claude-code`) if it isn't already present, then installs the latest code from `main`.
@@ -21,13 +21,13 @@ Requires **Node ≥ 18**. The installer also installs Claude Code (`@anthropic-a
 Pin a release:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/ujjwalredd/deepvariance-claude-code/main/install.sh | DEEPVARIANCE_REF=v1.0.1 bash
+curl -fsSL https://github.com/ujjwalredd/deepvariance-claude-code/raw/refs/heads/main/install.sh | DEEPVARIANCE_REF=v1.0.4 bash
 ```
 
 Install a specific branch/tag/commit:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/ujjwalredd/deepvariance-claude-code/main/install.sh | DEEPVARIANCE_REF=<ref> bash
+curl -fsSL https://github.com/ujjwalredd/deepvariance-claude-code/raw/refs/heads/main/install.sh | DEEPVARIANCE_REF=<ref> bash
 ```
 
 ## Usage
